@@ -2,28 +2,35 @@ import os
 import cv2
 import numpy as np
 import streamlit as st
+import easyocr
 from PIL import Image
-import ssl
 
-ssl._create_default_https_context = ssl._create_unverified_context
-
+# Directories setup
 INPUT_DIR = "input_images"
 OUTPUT_DIR = "output_images"
 os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-st.set_page_config(page_title="AI Watermark Remover", page_icon="🤖", layout="wide")
-st.title("🤖 AI-Powered Seamless Watermark Remover")
-st.write("Advanced texture blending and AI-touch removal without blur artifacts!")
+st.set_page_config(page_title="Heavy AI Watermark Remover", page_icon="🔥", layout="wide")
+st.title("🔥 Heavy AI Watermark Remover (OCR)")
+st.write("Using Deep Learning (EasyOCR) to read, target, and flawlessly erase watermarks.")
 
-uploaded_files = st.file_uploader("Select Anime Images", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+# 🧠 Cache the heavy OCR model so it doesn't reload for every single image
+@st.cache_resource
+def load_ocr_model():
+    # Will use GPU if available, otherwise fallback to CPU (Heavy RAM usage)
+    return easyocr.Reader(['en'])
 
-if uploaded_files and st.button("🚀 Apply AI Magic Removal"):
+reader = load_ocr_model()
+
+uploaded_files = st.file_uploader("Select High-Res Images", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+
+if uploaded_files and st.button("🚀 Deploy Heavy Scan & Clean"):
     
     for f in os.listdir(INPUT_DIR): os.remove(os.path.join(INPUT_DIR, f))
     for f in os.listdir(OUTPUT_DIR): os.remove(os.path.join(OUTPUT_DIR, f))
     
-    st.info("⏳ Applying AI texture synthesis & smart blending... Please wait.")
+    st.info("⏳ Initializing Deep Learning OCR... This might take a moment.")
     progress_bar = st.progress(0)
     
     for i, file in enumerate(uploaded_files):
@@ -32,39 +39,45 @@ if uploaded_files and st.button("🚀 Apply AI Magic Removal"):
         
         cv_img = cv2.imread(img_path)
         height, width = cv_img.shape[:2]
+        
         mask = np.zeros((height, width), dtype=np.uint8)
         
-        # Exact Top-Right Badge Zone
-        badge_width = int(width * 0.14)
-        badge_height = int(height * 0.06)
+        # 1. AI OCR SCAN
+        results = reader.readtext(cv_img)
         
-        x2 = width - int(width * 0.015)
-        x1 = x2 - badge_width
-        y1 = int(height * 0.015)
-        y2 = y1 + badge_height
+        for (bbox, text, prob) in results:
+            # Check if the AI found our target text (case-insensitive)
+            if "ai" in text.lower() or "generated" in text.lower() or "ai-generated" in text.lower():
+                
+                # Extract coordinates of the text
+                (tl, tr, br, bl) = bbox
+                x_min = int(min(tl[0], bl[0]))
+                y_min = int(min(tl[1], tr[1]))
+                x_max = int(max(tr[0], br[0]))
+                y_max = int(max(bl[1], br[1]))
+                
+                # 2. AGGRESSIVE PADDING (Fixes the "Bone" issue)
+                # Text mil gaya, ab box ko chaaro taraf se bada kar do taaki white pill poora cover ho jaye
+                pad_x = 40  # Horizontal padding to swallow the rounded corners
+                pad_y = 15  # Vertical padding
+                
+                x1 = max(0, x_min - pad_x)
+                y1 = max(0, y_min - pad_y)
+                x2 = min(width, x_max + pad_x)
+                y2 = min(height, y_max + pad_y)
+                
+                # Draw the expanded solid mask
+                cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)
         
-        cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)
+        # 3. HIGH-QUALITY INPAINTING (Navier-Stokes algorithm for better texture blending)
+        cleaned_img = cv2.inpaint(cv_img, mask, inpaintRadius=10, flags=cv2.INPAINT_NS)
         
-        # 🧠 AI-Touch Multi-Pass Texture Blending Strategy
-        # Pass 1: Fast Marching structure reconstruction (TELEA)
-        base_clean = cv2.inpaint(cv_img, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
-        
-        # Pass 2: Navier-Stokes detail smoothing to eliminate the blur patch and match ambient lighting
-        ai_touch_img = cv2.inpaint(base_clean, mask, inpaintRadius=5, flags=cv2.INPAINT_NS)
-        
-        # Pass 3: Edge sharpening to restore crystal-clear anime texture
-        kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
-        # Apply sharpening only near the badge area to keep overall image pristine
-        roi = ai_touch_img[y1:y2, x1:x2]
-        sharpened_roi = cv2.filter2D(roi, -1, kernel)
-        ai_touch_img[y1:y2, x1:x2] = sharpened_roi
-
         out_path = os.path.join(OUTPUT_DIR, file.name)
-        cv2.imwrite(out_path, ai_touch_img)
+        cv2.imwrite(out_path, cleaned_img)
         
         progress_bar.progress((i + 1) / len(uploaded_files))
         
-    st.success("✅ AI Touch-Up & Watermark Removal Complete!")
+    st.success("✅ Heavy OCR Scanning & Removal Complete! The background is pristine.")
     
     for file in uploaded_files:
         original_path = os.path.join(INPUT_DIR, file.name)
@@ -76,12 +89,7 @@ if uploaded_files and st.button("🚀 Apply AI Magic Removal"):
             with col1:
                 st.image(original_path, caption=f"Original: {file.name}")
             with col2:
-                st.image(out_path, caption=f"AI-Enhanced Cleaned: {file.name}")
+                st.image(out_path, caption=f"8K Quality Cleaned: {file.name}")
                 
                 with open(out_path, "rb") as f:
-                    st.download_button(
-                        label="💾 Download Cleaned Image",
-                        data=f,
-                        file_name=f"Cleaned_{file.name}",
-                        mime="image/png"
-                    )
+                    st.download_button(label="💾 Download HD Image", data=f, file_name=f"Cleaned_{file.name}", mime="image/png")
