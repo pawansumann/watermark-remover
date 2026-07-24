@@ -1,0 +1,7 @@
+streamlit
+opencv-python-headless
+numpy
+Pillow
+easyocr
+iopaint
+setuptools<70.0.0

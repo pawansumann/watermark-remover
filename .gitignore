@@ -1,0 +1,5 @@
+env/
+venv/
+output_images/
+input_images/
+secrets api key/
