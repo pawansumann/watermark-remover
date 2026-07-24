@@ -3,5 +3,5 @@ opencv-python-headless
 numpy
 Pillow
 easyocr
-iopaint
+# iopaint
 setuptools<70.0.0
