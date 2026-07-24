@@ -1,5 +1,8 @@
-streamlit
+﻿streamlit
+easyocr
 opencv-python-headless
 numpy
 Pillow
-setuptools<70.0.0
+torch
+torchaudio
+torchvision
