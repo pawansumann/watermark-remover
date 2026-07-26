@@ -1,95 +1,90 @@
-import os
+import streamlit as st
 import cv2
 import numpy as np
-import streamlit as st
 import easyocr
 from PIL import Image
+from simple_lama_inpainting import SimpleLama
+import io
+import zipfile
 
-# Directories setup
-INPUT_DIR = "input_images"
-OUTPUT_DIR = "output_images"
-os.makedirs(INPUT_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+# Setup Page
+st.set_page_config(page_title="AI Watermark Remover", page_icon="🔥", layout="wide")
+st.title("🔥 AI Watermark Remover (Pro Quality)")
+st.write("Powered by EasyOCR & LaMa AI for flawless generative inpainting.")
 
-st.set_page_config(page_title="Heavy AI Watermark Remover", page_icon="🔥", layout="wide")
-st.title("🔥 Heavy AI Watermark Remover (OCR)")
-st.write("Using Deep Learning (EasyOCR) to read, target, and flawlessly erase watermarks.")
-
-# 🧠 Cache the heavy OCR model so it doesn't reload for every single image
+# Cache Models (Loads only once to save server memory)
 @st.cache_resource
-def load_ocr_model():
-    # Will use GPU if available, otherwise fallback to CPU (Heavy RAM usage)
-    return easyocr.Reader(['en'])
+def load_models():
+    reader = easyocr.Reader(['en'], gpu=False)
+    lama = SimpleLama() 
+    return reader, lama
 
-reader = load_ocr_model()
+reader, lama = load_models()
 
+def remove_watermark_pro(image):
+    img_cv = np.array(image)
+    img_cv = cv2.cvtColor(img_cv, cv2.COLOR_RGB2BGR)
+    height, width = img_cv.shape[:2]
+    
+    mask = np.zeros((height, width), dtype=np.uint8)
+    results = reader.readtext(img_cv)
+    
+    for (bbox, text, prob) in results:
+        text_lower = text.lower().strip()
+        
+        if "ai-generated" in text_lower or "generated" in text_lower or text_lower == "ai":
+            (tl, tr, br, bl) = bbox
+            x_min, y_min = int(min(tl[0], bl[0])), int(min(tl[1], tr[1]))
+            x_max, y_max = int(max(tr[0], br[0])), int(max(bl[1], br[1]))
+            
+            pad_x, pad_y = 30, 20 
+            x1, y1 = max(0, x_min - pad_x), max(0, y_min - pad_y)
+            x2, y2 = min(width, x_max + pad_x), min(height, y_max + pad_y)
+            
+            cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)
+    
+    kernel = np.ones((5,5), np.uint8)
+    mask = cv2.dilate(mask, kernel, iterations=3)
+    
+    mask_pil = Image.fromarray(mask).convert('L')
+    cleaned_img = lama(image, mask_pil)
+    
+    return cleaned_img
+
+# UI Elements
 uploaded_files = st.file_uploader("Select High-Res Images", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
-if uploaded_files and st.button("🚀 Deploy Heavy Scan & Clean"):
-    
-    for f in os.listdir(INPUT_DIR): os.remove(os.path.join(INPUT_DIR, f))
-    for f in os.listdir(OUTPUT_DIR): os.remove(os.path.join(OUTPUT_DIR, f))
-    
-    st.info("⏳ Initializing Deep Learning OCR... This might take a moment.")
-    progress_bar = st.progress(0)
-    
-    for i, file in enumerate(uploaded_files):
-        img_path = os.path.join(INPUT_DIR, file.name)
-        Image.open(file).convert("RGB").save(img_path)
-        
-        cv_img = cv2.imread(img_path)
-        height, width = cv_img.shape[:2]
-        
-        mask = np.zeros((height, width), dtype=np.uint8)
-        
-        # 1. AI OCR SCAN
-        results = reader.readtext(cv_img)
-        
-        for (bbox, text, prob) in results:
-            # Check if the AI found our target text (case-insensitive)
-            if "ai" in text.lower() or "generated" in text.lower() or "ai-generated" in text.lower():
-                
-                # Extract coordinates of the text
-                (tl, tr, br, bl) = bbox
-                x_min = int(min(tl[0], bl[0]))
-                y_min = int(min(tl[1], tr[1]))
-                x_max = int(max(tr[0], br[0]))
-                y_max = int(max(bl[1], br[1]))
-                
-                # 2. AGGRESSIVE PADDING (Fixes the "Bone" issue)
-                # Text mil gaya, ab box ko chaaro taraf se bada kar do taaki white pill poora cover ho jaye
-                pad_x = 40  # Horizontal padding to swallow the rounded corners
-                pad_y = 15  # Vertical padding
-                
-                x1 = max(0, x_min - pad_x)
-                y1 = max(0, y_min - pad_y)
-                x2 = min(width, x_max + pad_x)
-                y2 = min(height, y_max + pad_y)
-                
-                # Draw the expanded solid mask
-                cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)
-        
-        # 3. HIGH-QUALITY INPAINTING (Navier-Stokes algorithm for better texture blending)
-        cleaned_img = cv2.inpaint(cv_img, mask, inpaintRadius=10, flags=cv2.INPAINT_NS)
-        
-        out_path = os.path.join(OUTPUT_DIR, file.name)
-        cv2.imwrite(out_path, cleaned_img)
-        
-        progress_bar.progress((i + 1) / len(uploaded_files))
-        
-    st.success("✅ Heavy OCR Scanning & Removal Complete! The background is pristine.")
+if uploaded_files and st.button("🚀 Clean Images"):
+    processed_images = []
     
     for file in uploaded_files:
-        original_path = os.path.join(INPUT_DIR, file.name)
-        out_path = os.path.join(OUTPUT_DIR, file.name)
+        init_image = Image.open(file).convert("RGB")
+        st.write(f"Processing {file.name}...")
         
-        if os.path.exists(out_path):
-            st.markdown("---")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.image(original_path, caption=f"Original: {file.name}")
-            with col2:
-                st.image(out_path, caption=f"8K Quality Cleaned: {file.name}")
-                
-                with open(out_path, "rb") as f:
-                    st.download_button(label="💾 Download HD Image", data=f, file_name=f"Cleaned_{file.name}", mime="image/png")
+        # Call the Pro function
+        final_img = remove_watermark_pro(init_image)
+        
+        # Display result
+        st.image(final_img, caption=f"Flawlessly Cleaned: {file.name}")
+        
+        # Store in list for ZIP creation
+        processed_images.append((file.name, final_img))
+        
+    # Create ZIP file in memory (Server friendly)
+    if processed_images:
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for file_name, img in processed_images:
+                img_buffer = io.BytesIO()
+                img.save(img_buffer, format="PNG") # PNG ensures no quality loss
+                zip_file.writestr(f"cleaned_{file_name}", img_buffer.getvalue())
+        
+        st.success("✨ All images processed successfully!")
+        
+        # The All-in-One Download Button
+        st.download_button(
+            label="📦 Download All Cleaned Images (ZIP)",
+            data=zip_buffer.getvalue(),
+            file_name="Aniviewer_Cleaned_Images.zip",
+            mime="application/zip"
+        )
