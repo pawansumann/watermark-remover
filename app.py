@@ -6,6 +6,16 @@ from PIL import Image
 from simple_lama_inpainting import SimpleLama
 import io
 import zipfile
+import torch
+
+# --- MONKEY PATCH FOR LINUX CPU (STREAMLIT CLOUD) ---
+# Yeh Streamlit server ko force karega ki wo LaMa ko strictly CPU RAM mein load kare
+original_load = torch.jit.load
+def _patched_load(*args, **kwargs):
+    kwargs['map_location'] = 'cpu'
+    return original_load(*args, **kwargs)
+torch.jit.load = _patched_load
+# ----------------------------------------------------
 
 # Setup Page
 st.set_page_config(page_title="AI Watermark Remover", page_icon="🔥", layout="wide")
