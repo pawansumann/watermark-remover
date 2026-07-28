@@ -16,7 +16,7 @@ st.write("Powered by EasyOCR & LaMa AI for flawless generative inpainting.")
 @st.cache_resource
 def load_models():
     reader = easyocr.Reader(['en'], gpu=False)
-    lama = SimpleLama() 
+    lama = SimpleLama(device="cpu") 
     return reader, lama
 
 reader, lama = load_models()
